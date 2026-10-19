@@ -44,6 +44,56 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required." >&2; exit 1; }
 command -v tmux >/dev/null 2>&1 || { echo "tmux is required." >&2; exit 1; }
 echo "Platform: $(uname -s) $(uname -m)"
 
+# pi runs on Node.js >= 22.19. If node or npm is missing (or too old), install the
+# official Node LTS tarball into ~/.local, which also brings npm. Nothing needs sudo.
+NODE_VERSION="v22.23.3"
+LOCAL_BIN="$HOME/.local/bin"
+
+node_ok() {
+  command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 || return 1
+  node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 19) ? 0 : 1)'
+}
+
+node_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)  echo x64 ;;
+    aarch64|arm64) echo arm64 ;;
+    *) echo "unsupported CPU architecture: $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
+ensure_node() {
+  if node_ok; then
+    echo "node $(node -v) and npm already available"
+    return 0
+  fi
+  local arch base file dir tmp
+  arch=$(node_arch) || return 1
+  base="https://nodejs.org/dist/$NODE_VERSION"
+  file="node-$NODE_VERSION-linux-$arch.tar.xz"
+  dir="$HOME/.local/share/node-$NODE_VERSION-linux-$arch"
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "[dry-run] download $base/$file, verify SHA256, extract to $dir, link node/npm/npx into $LOCAL_BIN"
+    return 0
+  fi
+  command -v xz >/dev/null 2>&1 || { echo "xz is required to unpack Node.js." >&2; return 1; }
+  echo "Installing Node.js $NODE_VERSION ($arch) with npm into $dir"
+  tmp=$(mktemp -d)
+  curl -fsSL "$base/$file" -o "$tmp/$file"
+  curl -fsSL "$base/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
+  if ! (cd "$tmp" && grep " $file\$" SHASUMS256.txt | sha256sum -c -); then
+    rm -rf "$tmp"
+    echo "Node.js checksum mismatch; aborting." >&2
+    return 1
+  fi
+  mkdir -p "$dir" "$LOCAL_BIN"
+  tar -xJf "$tmp/$file" -C "$dir" --strip-components=1
+  rm -rf "$tmp"
+  for bin in node npm npx; do ln -sfn "$dir/bin/$bin" "$LOCAL_BIN/$bin"; done
+  export PATH="$LOCAL_BIN:$PATH"
+  node_ok || { echo "Node.js install did not work." >&2; return 1; }
+}
+
 # Installs one agent if it is missing. Official installers pick the right binary
 # for the machine's architecture (x86_64 or arm64), so no arch mapping is needed here.
 install_agent() {
@@ -54,20 +104,21 @@ install_agent() {
   fi
   case "$agent" in
     opencode) cmd="curl -fsSL https://opencode.ai/install | bash" ;;
-    pi)       cmd="npm install -g --ignore-scripts @earendil-works/pi-coding-agent" ;;
+    pi)       cmd="npm install -g --ignore-scripts --prefix $HOME/.local @earendil-works/pi-coding-agent" ;;
     claude)   echo "claude is not installed by this script; install it first." >&2; return 1 ;;
     *)        echo "unknown agent: $agent (expected opencode or pi)" >&2; return 1 ;;
   esac
   if [ "$DRY_RUN" = 1 ]; then
+    [ "$agent" = pi ] && ensure_node
     echo "[dry-run] $cmd"
     return 0
   fi
-  if [ "$agent" = pi ] && ! command -v npm >/dev/null 2>&1; then
-    echo "pi needs npm (Node.js 22.19+). Install Node first, then re-run." >&2
-    return 1
+  if [ "$agent" = pi ]; then
+    ensure_node || return 1
   fi
   echo "Installing $agent: $cmd"
   bash -c "$cmd"
+  export PATH="$LOCAL_BIN:$PATH"
   command -v "$agent" >/dev/null 2>&1 || { echo "$agent did not appear on PATH after install." >&2; return 1; }
 }
 

@@ -26,7 +26,7 @@ Agents you don't have installed are simply skipped. The setup script still insta
 - tmux 3.x
 - git
 - jq (for `setup-agent-tmux-resume.sh`)
-- At least one agent: `claude`, `opencode` or `pi`
+- At least one agent: `claude`, `opencode` or `pi` (or let the script install `opencode` and `pi`)
 
 The scripts don't download any binaries, so they work the same on x86_64 and arm64. Install the agents with their own installers.
 
@@ -46,7 +46,9 @@ Run the scripts in order:
 | Agent | Install command |
 | --- | --- |
 | opencode | `curl -fsSL https://opencode.ai/install \| bash` (official installer, picks the binary for your architecture) |
-| pi | `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` (needs Node.js 22.19+ and npm) |
+| pi | If `node` (22.19+) and `npm` are missing, the script installs Node.js v22.23.3 with npm into `~/.local` (official tarball from nodejs.org, SHA256-checked, x64 or arm64). Then it runs `npm install -g --ignore-scripts --prefix ~/.local @earendil-works/pi-coding-agent`. No sudo needed. |
+
+If `~/.local/bin` is not on your `PATH`, add it to your shell profile.
 
 Claude Code is not installed by this script. Install it first.
 
