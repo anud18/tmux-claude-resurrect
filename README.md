@@ -1,22 +1,34 @@
 # tmux-claude-resurrect
 
-Setup scripts for [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) and [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum), plus a hook that brings each Claude Code pane back to its own conversation after a restore.
+Setup scripts for [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) and [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum), plus hooks that bring each AI agent pane back to its own session after a restore.
 
-tmux-resurrect restores layouts and working directories, but not the programs running in them. This setup fixes that for Claude Code: if several Claude panes share one folder, each one resumes its own session.
+tmux-resurrect restores layouts and working directories, but not the programs running in them. This setup fixes that for **Claude Code**, **opencode** and **pi**: if several panes share one folder, each one resumes its own session.
 
 ## What's included
 
 | Script | Purpose |
 | --- | --- |
 | `scripts/install-tmux-resurrect.sh` | Installs TPM (Tmux Plugin Manager) if missing, adds `tmux-resurrect` and `tmux-continuum` to `~/.tmux.conf`, and installs the plugins. |
-| `scripts/setup-claude-tmux-resume.sh` | Wires Claude Code sessions into resurrect so each pane resumes with `claude --resume <id>`. |
+| `scripts/setup-agent-tmux-resume.sh` | Makes each agent pane resume its own session after restore (Claude Code, opencode, pi). |
+
+## Supported agents
+
+| Agent | How the session ID is recorded | Resume command |
+| --- | --- | --- |
+| Claude Code | `SessionStart` hook in `~/.claude/settings.json` | `claude --resume <id>` |
+| opencode | plugin in `~/.config/opencode/plugin/` (`session.created` / `session.updated`) | `opencode -s <id>` |
+| pi | extension in `~/.pi/agent/extensions/` (`session_start`) | `pi --session <id>` |
+
+Agents you don't have installed are simply skipped. The setup script still installs their hooks, so they work as soon as you install them.
 
 ## Requirements
 
 - tmux 3.x
 - git
-- jq (for `setup-claude-tmux-resume.sh`)
-- Claude Code CLI (`claude`)
+- jq (for `setup-agent-tmux-resume.sh`)
+- At least one agent: `claude`, `opencode` or `pi`
+
+The scripts don't download any binaries, so they work the same on x86_64 and arm64. Install the agents with their own installers.
 
 ## Installation
 
@@ -24,7 +36,7 @@ Run the scripts in order:
 
 ```bash
 ./scripts/install-tmux-resurrect.sh
-./scripts/setup-claude-tmux-resume.sh   # optional: Claude session resume
+./scripts/setup-agent-tmux-resume.sh   # optional: resume agent sessions
 ```
 
 ### `install-tmux-resurrect.sh`
@@ -41,19 +53,21 @@ Run the scripts in order:
 
 Every step is idempotent. Re-running the script skips anything already in place.
 
-### `setup-claude-tmux-resume.sh`
+### `setup-agent-tmux-resume.sh`
 
 It creates these files:
 
-- `~/.claude/hooks/tmux-record-session.sh`: a Claude Code `SessionStart` hook. It stores the session ID in the pane's `@claude_session_id` tmux option.
-- `~/.tmux/claude-resurrect.sh`: called by resurrect's hooks.
-  - `save` writes `~/.claude/tmux-resurrect-claude.tsv`, which maps each pane that is running `claude` to its session ID.
-  - `restore` runs `claude --resume <id>` in each recorded pane, skipping panes where Claude is already running.
+- `~/.claude/hooks/tmux-record-session.sh`: Claude Code `SessionStart` hook. It stores the session ID in the pane option `@claude_session_id`.
+- `~/.config/opencode/plugin/tmux-record-session.js`: opencode plugin. It stores the session ID in the pane option `@opencode_session_id`. Child sessions are ignored.
+- `~/.pi/agent/extensions/tmux-record-session.ts`: pi extension. It stores the session ID in the pane option `@pi_session_id`.
+- `~/.tmux/agent-resurrect.sh`: called by resurrect's hooks.
+  - `save` writes `~/.tmux/agent-resurrect.tsv`, which lists each pane that is still running an agent, with its session ID.
+  - `restore` types the resume command into each recorded pane that is sitting at an idle shell.
 
 It also:
 
-- registers the `SessionStart` hook in `~/.claude/settings.json` (the original is saved as `settings.json.bak`), and
-- adds `@resurrect-hook-post-save-all` and `@resurrect-hook-post-restore-all` to `~/.tmux.conf`.
+- registers the Claude `SessionStart` hook in `~/.claude/settings.json` (the original is saved as `settings.json.bak`), and
+- sets `@resurrect-hook-post-save-all` and `@resurrect-hook-post-restore-all` in `~/.tmux.conf`. If you installed an earlier version, these now point to `agent-resurrect.sh`.
 
 ## Usage
 
@@ -65,9 +79,16 @@ It also:
 
 With tmux-continuum, the session is saved every 15 minutes, and it is restored automatically when tmux starts.
 
+## Testing status
+
+- **Claude Code**: the record, save and restore steps were tested with a stand-in `claude` binary.
+- **opencode**: tested end to end on aarch64 with opencode 1.19.3. The session was recorded, saved, and resumed into the same session after the tmux server was restarted.
+- **pi**: the extension and the resume command were written from pi's documentation and type declarations. It has not been run yet.
+- **x86_64**: the scripts don't contain architecture-specific code, but this was not run on an x86_64 machine.
+
 ## Limitations
 
-- Claude sessions that were already running before the hook was installed are not tagged. Restart them, or resume them once with `claude --resume`.
-- If you switch conversations inside a pane (`/clear` or `/resume`), the hook records the new session ID the next time Claude starts. The ID stored at the last save is what gets resumed.
-- Restore works by sending keystrokes into the pane's shell, so the pane has to be sitting at a shell prompt.
-- The scripts assume the default paths under `$HOME`.
+- Agent sessions that were already running before the hooks were installed are not tagged. Restart them, or resume them once.
+- If you switch conversations inside a pane (`/clear`, `/resume`, `/new`), the hook records the new session ID the next time the agent starts a session. The ID stored at the last save is what gets resumed.
+- Restore works by typing into the pane's shell, so the pane has to be sitting at a shell prompt.
+- The scripts assume the default paths under `$HOME` and the default `XDG_CONFIG_HOME` / `PI_CODING_AGENT_DIR`.
