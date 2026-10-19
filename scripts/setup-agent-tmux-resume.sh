@@ -17,9 +17,65 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 OPENCODE_PLUGIN="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugin/tmux-record-session.js"
 PI_EXTENSION="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/tmux-record-session.ts"
 
+usage() {
+  cat <<'EOF'
+Usage: setup-agent-tmux-resume.sh [--install LIST] [--dry-run]
+
+  --install LIST  comma-separated agents to install if missing: opencode,pi
+                  (claude is not installed by this script; install it first)
+                  default: install nothing, only wire up hooks
+  --dry-run       print the install commands without running them
+EOF
+}
+
+INSTALL_LIST=""
+DRY_RUN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --install) INSTALL_LIST="${2:?--install needs a value}"; shift 2 ;;
+    --install=*) INSTALL_LIST="${1#--install=}"; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 1 ;;
+  esac
+done
+
 command -v jq >/dev/null 2>&1 || { echo "jq is required." >&2; exit 1; }
 command -v tmux >/dev/null 2>&1 || { echo "tmux is required." >&2; exit 1; }
 echo "Platform: $(uname -s) $(uname -m)"
+
+# Installs one agent if it is missing. Official installers pick the right binary
+# for the machine's architecture (x86_64 or arm64), so no arch mapping is needed here.
+install_agent() {
+  local agent="$1" cmd
+  if command -v "$agent" >/dev/null 2>&1; then
+    echo "$agent already installed: $(command -v "$agent")"
+    return 0
+  fi
+  case "$agent" in
+    opencode) cmd="curl -fsSL https://opencode.ai/install | bash" ;;
+    pi)       cmd="npm install -g --ignore-scripts @earendil-works/pi-coding-agent" ;;
+    claude)   echo "claude is not installed by this script; install it first." >&2; return 1 ;;
+    *)        echo "unknown agent: $agent (expected opencode or pi)" >&2; return 1 ;;
+  esac
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "[dry-run] $cmd"
+    return 0
+  fi
+  if [ "$agent" = pi ] && ! command -v npm >/dev/null 2>&1; then
+    echo "pi needs npm (Node.js 22.19+). Install Node first, then re-run." >&2
+    return 1
+  fi
+  echo "Installing $agent: $cmd"
+  bash -c "$cmd"
+  command -v "$agent" >/dev/null 2>&1 || { echo "$agent did not appear on PATH after install." >&2; return 1; }
+}
+
+if [ -n "$INSTALL_LIST" ]; then
+  for agent in ${INSTALL_LIST//,/ }; do
+    install_agent "$agent"
+  done
+fi
 
 mkdir -p "$(dirname "$CLAUDE_HOOK")" "$(dirname "$HELPER")" "$(dirname "$OPENCODE_PLUGIN")" "$(dirname "$PI_EXTENSION")"
 

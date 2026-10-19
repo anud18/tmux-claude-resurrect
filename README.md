@@ -36,8 +36,19 @@ Run the scripts in order:
 
 ```bash
 ./scripts/install-tmux-resurrect.sh
-./scripts/setup-agent-tmux-resume.sh   # optional: resume agent sessions
+./scripts/setup-agent-tmux-resume.sh                     # wire up hooks only
+./scripts/setup-agent-tmux-resume.sh --install opencode,pi   # also install missing agents
+./scripts/setup-agent-tmux-resume.sh --install opencode,pi --dry-run   # print install commands only
 ```
+
+`--install` takes a comma-separated list of `opencode` and `pi`. Agents already on `PATH` are skipped. Without `--install`, the script installs nothing.
+
+| Agent | Install command |
+| --- | --- |
+| opencode | `curl -fsSL https://opencode.ai/install \| bash` (official installer, picks the binary for your architecture) |
+| pi | `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` (needs Node.js 22.19+ and npm) |
+
+Claude Code is not installed by this script. Install it first.
 
 ### `install-tmux-resurrect.sh`
 
