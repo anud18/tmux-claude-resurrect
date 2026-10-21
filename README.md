@@ -10,6 +10,7 @@ tmux-resurrect restores layouts and working directories, but not the programs ru
 | --- | --- |
 | `scripts/install-tmux-resurrect.sh` | Installs TPM (Tmux Plugin Manager) if missing, adds `tmux-resurrect` and `tmux-continuum` to `~/.tmux.conf`, and installs the plugins. |
 | `scripts/setup-agent-tmux-resume.sh` | Makes each agent pane resume its own session after restore (Claude Code, opencode, pi). |
+| `scripts/install-claude-statusline.sh` | Installs the Claude Code status line (`claude/statusline-command.sh`) and sets `statusLine` in `~/.claude/settings.json`. |
 
 ## Supported agents
 
@@ -39,6 +40,7 @@ Run the scripts in order:
 ./scripts/setup-agent-tmux-resume.sh                     # wire up hooks only
 ./scripts/setup-agent-tmux-resume.sh --install opencode,pi   # also install missing agents
 ./scripts/setup-agent-tmux-resume.sh --install opencode,pi --dry-run   # print install commands only
+./scripts/install-claude-statusline.sh                   # optional: Claude Code status line
 ```
 
 `--install` takes a comma-separated list of `opencode` and `pi`. Agents already on `PATH` are skipped. Without `--install`, the script installs nothing.
@@ -81,6 +83,33 @@ It also:
 
 - registers the Claude `SessionStart` hook in `~/.claude/settings.json` (the original is saved as `settings.json.bak`), and
 - sets `@resurrect-hook-post-save-all` and `@resurrect-hook-post-restore-all` in `~/.tmux.conf`. If you installed an earlier version, these now point to `agent-resurrect.sh`.
+
+### `install-claude-statusline.sh`
+
+Copies `claude/statusline-command.sh` to `~/.claude/statusline-command.sh` and sets `statusLine` in `~/.claude/settings.json` to run it. Replaced files are saved as `.bak`, and re-running changes nothing. It needs `jq` and `git`.
+
+The status line shows:
+
+- the last two directory components,
+- git branch, dirty marker, ahead/behind (`↑2↓1`) and +/- line counts,
+- model and context window size, and the output style (if not default),
+- a context bar that turns bold red with `⚠` from 90%,
+- 5-hour and 7-day usage bars with the time until reset (`↻2h13m`). Bars are green, yellow from 50% and red from 80%,
+- session duration and cost.
+
+Segments with no data are left out. It runs on bash builtins plus one `jq` and two `git` calls per render.
+
+To set it up by hand instead, copy the script to `~/.claude/statusline-command.sh` and add this to `~/.claude/settings.json`:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "bash ~/.claude/statusline-command.sh",
+  "padding": 0
+}
+```
+
+The installer writes the absolute path instead of `~`. The branch icon needs a Nerd Font or Powerline font.
 
 ## Usage
 
